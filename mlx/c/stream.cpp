@@ -100,8 +100,17 @@ extern "C" int mlx_set_default_stream(mlx_stream stream) {
 }
 extern "C" mlx_stream mlx_default_cpu_stream_new(void) {
   try {
-    return mlx_stream_new_(
-        mlx::core::default_stream(mlx::core::Device::DeviceType::cpu));
+    // mlx core >= 0.32 makes default_stream() thread-local: each calling
+    // thread gets its own stream whose command encoder is registered only in
+    // that thread's registry. These two entry points back mlx-swift's
+    // process-global Stream.cpu / Stream.gpu statics, which are captured once
+    // and used from many threads — evaluating from any other thread then
+    // throws "There is no Stream(...) in current thread". Return a process-
+    // wide globally-registered stream (0.31.x semantics) instead; callers
+    // must serialize use per stream, exactly as before.
+    static mlx::core::Stream s = mlx::core::new_thread_unsafe_stream(
+        mlx::core::Device::DeviceType::cpu);
+    return mlx_stream_new_(s);
   } catch (std::exception& e) {
     mlx_error(e.what());
     return mlx_stream_new_();
@@ -109,8 +118,10 @@ extern "C" mlx_stream mlx_default_cpu_stream_new(void) {
 }
 extern "C" mlx_stream mlx_default_gpu_stream_new(void) {
   try {
-    return mlx_stream_new_(
-        mlx::core::default_stream(mlx::core::Device::DeviceType::gpu));
+    // See mlx_default_cpu_stream_new: process-wide globally-registered stream.
+    static mlx::core::Stream s = mlx::core::new_thread_unsafe_stream(
+        mlx::core::Device::DeviceType::gpu);
+    return mlx_stream_new_(s);
   } catch (std::exception& e) {
     mlx_error(e.what());
     return mlx_stream_new_();
